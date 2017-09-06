@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    backup: snapshot
+  name: backup-snapshot
+spec:
+      containers:
+      - env:
+#        - name: AWS_ACCESS_KEY_ID
+#          value: ""
+#        - name: AWS_SECRET_ACCESS_KEY
+#          value: ""
+        - name: DEFAULT_RETENTION_DAYS
+          value: 7
+        image: getupcloud/aws-volume-snapshot:latest
+        imagePullPolicy: IfNotPresent
+        name: backup
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 200m
+            memory: 512Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 300

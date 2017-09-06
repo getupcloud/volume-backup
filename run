@@ -1,0 +1,126 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import boto3
+from datetime import datetime, timezone
+from dateutils import relativedelta
+import argparse
+
+DEFAULT_RETENTION_DAYS = os.environ.get('DEFAULT_RETENTION_DAYS', 7)
+
+parser = argparse.ArgumentParser(description='Create EC2 snapshots for kubernetes PVs.')
+parser.add_argument('--dont-create-snapshots', dest='create_snapshots', action='store_false', default=True,
+                    help='Don\'t clean old snapshots.')
+parser.add_argument('--retention-days', dest='retention_days', type=int, default=DEFAULT_RETENTION_DAYS,
+                    help='How many days should old snapshots be stored. Older than that will be deleted.')
+parser.add_argument('--dont-clean-old-snapshots', dest='clean_old_snapshots', action='store_false', default=True,
+                    help='Don\'t clean old snapshots.')
+parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False,
+                    help='Don\'t save a bit')
+
+args = parser.parse_args()
+
+if args.retention_days < 1:
+    args.retention_days = DEFAULT_RETENTION_DAYS
+    print(f'Invalid retention days. Reseted to default: {args.retention_days}')
+
+region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
+
+# Tags to copy from volumes into snapshots
+filter_tags = [
+    'kubernetes.io/created-for/pv/name',
+    'kubernetes.io/created-for/pvc/name',
+    'kubernetes.io/created-for/pvc/namespace'
+]
+
+
+def get_user():
+    print(f'--> Retrieving user info')
+    iam_user = iam.get_user()
+    return iam_user['User']
+
+
+def get_tags(tags, *keys):
+    for tag in tags:
+        if tag['Key'] in keys:
+            yield tag
+
+
+def get_tag_value(tags, key):
+    for tag in tags:
+        if tag['Key'] == key:
+            return tag['Value']
+
+
+def list_volumes(region):
+    print(f'--> Listing volumes from region {region}')
+
+    filters = [{'Name':'tag:Name','Values':['kubernetes-dynamic-pvc-*']}]
+    volumes = ec2.describe_volumes(Filters=filters)['Volumes']
+
+    print(f'--> Found {len(volumes)} volume(s)')
+    return volumes
+
+
+def create_snapshot(volume, dry_run=False):
+    pv = get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pv/name')
+    pvc = get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pvc/name')
+    namespace = get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pvc/namespace')
+    ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+    description = f'backup-{ts}-{namespace}-{pvc}-{pv}'
+
+    print(f'--> Creating snapshot for volume {volume["VolumeId"]} -> ', end='', flush=True)
+
+    if dry_run:
+        print('(not created by user request)')
+        return {}
+
+    snapshot = ec2.create_snapshot(VolumeId=volume['VolumeId'], Description=description)
+    print(f'{snapshot["SnapshotId"]} [{snapshot["VolumeSize"]}Gi] {snapshot["Description"]}')
+    return snapshot
+
+
+def list_snapshots(region, user):
+    print(f'--> Listing snapshots from region {region}')
+
+    snapshots = ec2.describe_snapshots(
+                    Filters=[{'Name':'tag:CreatedBy','Values':['AutomatedBackup']}])['Snapshots']
+#                    OwnerIds=[user['UserId']])['Snapshots']
+
+    print(f'--> Found {len(snapshots)} snapshot(s)')
+    return snapshots
+
+
+def delete_snapshot(snapshot, dry_run=False):
+    print(f'--> Deleting expired snapshot {snapshot["SnapshotId"]} [{snapshot["VolumeSize"]}Gi] Created {snapshot["StartTime"]} {snapshot["Description"]}')
+
+    if dry_run:
+        print('(not deleted by user request)')
+        return
+
+    ec2.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
+
+
+def expired(snapshot, clean_before):
+    return snapshot['State'] != 'complete' and snapshot['StartTime'] < clean_before
+
+
+iam = boto3.client('iam')
+ec2 = boto3.client('ec2')
+
+user = get_user()
+
+if args.create_snapshots:
+    for volume in list_volumes(region):
+        create_snapshot(volume, dry_run=args.dry_run)
+
+if args.clean_old_snapshots:
+    clean_before = datetime.utcnow() - relativedelta(days=args.retention_days)
+    clean_before = clean_before.replace(tzinfo=timezone.utc)
+
+    print(f'--> Cleaning snapshots older than {args.retention_days} days, before {clean_before}')
+
+    for snapshot in list_snapshots(region, user):
+        if expired(snapshot, clean_before):
+            delete_snapshot(snapshot, dry_run=args.dry_run)
