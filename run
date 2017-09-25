@@ -103,8 +103,9 @@ def delete_snapshot(snapshot, dry_run=False):
 
 
 def expired(snapshot, clean_before):
-    return snapshot['State'] != 'complete' and snapshot['StartTime'] < clean_before
+    return snapshot['State'] == 'complete' and snapshot['StartTime'] < clean_before
 
+print('--> Started', datetime.utcnow())
 
 iam = boto3.client('iam')
 ec2 = boto3.client('ec2')
