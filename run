@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from dateutils import relativedelta
 import argparse
 
-DEFAULT_RETENTION_DAYS = os.environ.get('DEFAULT_RETENTION_DAYS', 7)
+DEFAULT_RETENTION_DAYS = os.environ.get('DEFAULT_RETENTION_DAYS', 14)
 
 parser = argparse.ArgumentParser(description='Create EC2 snapshots for kubernetes PVs.')
 parser.add_argument('--dont-create-snapshots', dest='create_snapshots', action='store_false', default=True,
@@ -26,14 +26,6 @@ if args.retention_days < 1:
     print(f'Invalid retention days. Reseted to default: {args.retention_days}')
 
 region = os.environ.get('AWS_DEFAULT_REGION', 'us-east-1')
-
-# Tags to copy from volumes into snapshots
-filter_tags = [
-    'kubernetes.io/created-for/pv/name',
-    'kubernetes.io/created-for/pvc/name',
-    'kubernetes.io/created-for/pvc/namespace'
-]
-
 
 def get_user():
     print(f'--> Retrieving user info')
@@ -78,6 +70,7 @@ def create_snapshot(volume, dry_run=False):
 
     snapshot = ec2.create_snapshot(VolumeId=volume['VolumeId'], Description=description)
     print(f'{snapshot["SnapshotId"]} [{snapshot["VolumeSize"]}Gi] {snapshot["Description"]}')
+    ec2.create_tags(Resources=[snapshot["SnapshotId"]], Tags=[{'Key':'CreatedBy', 'Value':'AutomatedBackup'}])
     return snapshot
 
 
@@ -85,8 +78,8 @@ def list_snapshots(region, user):
     print(f'--> Listing snapshots from region {region}')
 
     snapshots = ec2.describe_snapshots(
-                    Filters=[{'Name':'tag:CreatedBy','Values':['AutomatedBackup']}])['Snapshots']
-#                    OwnerIds=[user['UserId']])['Snapshots']
+                    Filters=[{'Name':'tag:CreatedBy','Values':['AutomatedBackup']}],
+                    OwnerIds=[user['UserId']])['Snapshots']
 
     print(f'--> Found {len(snapshots)} snapshot(s)')
     return snapshots
@@ -103,7 +96,7 @@ def delete_snapshot(snapshot, dry_run=False):
 
 
 def expired(snapshot, clean_before):
-    return snapshot['State'] == 'complete' and snapshot['StartTime'] < clean_before
+    return snapshot['State'] == 'completed' and snapshot['StartTime'] < clean_before
 
 print('--> Started', datetime.utcnow())
 
