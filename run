@@ -57,6 +57,11 @@ def list_volumes(region):
 
 
 def create_snapshot(volume, dry_run=False):
+    ignore = get_tag_value(volume['Tags'], 'snapshot')
+    if ignore in [ 'false', 'False', 'no', '0' ]:
+        print(f'--> Ignoring snapshot for volume {volume["VolumeId"]}')
+        return
+
     pv = get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pv/name')
     pvc = get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pvc/name')
     namespace = get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pvc/namespace')
