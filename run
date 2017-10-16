@@ -6,6 +6,7 @@ import boto3
 from datetime import datetime, timezone
 from dateutils import relativedelta
 import argparse
+import traceback
 
 DEFAULT_RETENTION_DAYS = os.environ.get('DEFAULT_RETENTION_DAYS', 14)
 
@@ -92,8 +93,10 @@ def delete_snapshot(snapshot, dry_run=False):
         print('(not deleted by user request)')
         return
 
-    ec2.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
-
+    try:
+        ec2.delete_snapshot(SnapshotId=snapshot['SnapshotId'])
+    except:
+        traceback.print_exc()
 
 def expired(snapshot, clean_before):
     return snapshot['State'] == 'completed' and snapshot['StartTime'] < clean_before
