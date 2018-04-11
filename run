@@ -111,7 +111,11 @@ print('--> Started', datetime.utcnow())
 iam = boto3.client('iam')
 ec2 = boto3.client('ec2')
 
-user = get_user()
+try:
+    user = get_user()
+except Exception as ex:
+    print(ex)
+    sys.exit()
 
 if args.create_snapshots:
     for volume in list_volumes(region):
