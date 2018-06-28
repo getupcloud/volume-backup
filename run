@@ -85,7 +85,7 @@ def list_snapshots(region, user):
 
     snapshots = ec2.describe_snapshots(
                     Filters=[{'Name':'tag:CreatedBy','Values':['AutomatedBackup']}],
-                    OwnerIds=[user['UserId']])['Snapshots']
+                    OwnerIds=[user['Arn'].split(':')[4]])['Snapshots']
 
     print(f'--> Found {len(snapshots)} snapshot(s)')
     return snapshots
