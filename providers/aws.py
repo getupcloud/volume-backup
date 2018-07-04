@@ -24,7 +24,10 @@ class AWS(Provider):
     def list_volumes(self):
         print(f'--> Listing volumes from region {self.region}')
 
-        filters = [{'Name':'tag:Name','Values':['kubernetes-dynamic-pvc-*']}]
+        filters = [
+            {'Name':'tag:Name','Values':['kubernetes-dynamic-pvc-*']},
+            {'Name':'status','Values':['available', 'in-use']},
+        ]
         volumes = self.ec2.describe_volumes(Filters=filters)['Volumes']
 
         print(f'--> Found {len(volumes)} volume(s)')
