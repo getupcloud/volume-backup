@@ -1,5 +1,6 @@
 import os
 import boto3
+import traceback
 from datetime import datetime
 from .provider import Provider
 
