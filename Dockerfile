@@ -8,7 +8,7 @@ ENV HOME=/usr/src/app \
     PATH=/usr/src/app:$PATH
 
 RUN apk add --no-cache bash coreutils && \
-    pip install --no-cache-dir boto3 dateutils
+    pip install --no-cache-dir -r requirements.txt
 
 COPY container-entrypoint run ./
 
