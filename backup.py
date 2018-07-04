@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 from datetime import datetime, timezone
 from dateutils import relativedelta
 import argparse
@@ -29,6 +30,13 @@ if os.environ.get('AWS_ACCESS_KEY_ID') and os.environ.get('AWS_SECRET_ACCESS_KEY
     print('--> Detected provider AWS')
     from providers.aws import AWS
     provider = AWS()
+elif os.environ.get('GOOGLE_APPLICATION_CREDENTIALS') and os.environ.get('GOOGLE_ZONE'):
+    print('--> Detected provider GCE')
+    with open(os.environ['GOOGLE_APPLICATION_CREDENTIALS']) as credentials:
+        project = json.load(credentials)["project_id"]
+
+    from providers.gce import GCE
+    provider = GCE(project, os.environ.get('GOOGLE_ZONE'))
 else:
     print('--> Unable to detected provider')
     sys.exit(0 if args.dry_run else 1)
