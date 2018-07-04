@@ -1,4 +1,4 @@
 #!/bin/bash
 
 export PYTHONPATH=$PWD/
-exec python backup.py
+exec python backup.py "$@"
