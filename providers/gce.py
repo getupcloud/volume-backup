@@ -3,6 +3,7 @@ import sys
 import json
 import traceback
 from apiclient.discovery import build
+from datetime import datetime
 from dateutil.parser import parse
 from .provider import Provider
 
@@ -40,7 +41,8 @@ class GCE(Provider):
 
         namespace = self.get_tag_value(tags, 'kubernetes.io/created-for/pvc/namespace')
         pvc = self.get_tag_value(tags, 'kubernetes.io/created-for/pvc/name')
-        name = f'{namespace}-{pvc}'
+        ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+        name = f'{namespace}-{pvc}-{ts}'
         labels = {
             'created-by': 'automated-backup',
             'name': name,
