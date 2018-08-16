@@ -4,6 +4,7 @@ import os
 import sys
 import json
 import random
+import time
 from datetime import datetime, timezone
 from dateutils import relativedelta
 import argparse
@@ -45,22 +46,24 @@ else:
 
 print('--> Started', datetime.utcnow())
 
+
+
 def gen_event(corev1, err, snapshot, pv, pvc_name, pvc_namespace):
     hostname = os.environ.get('HOSTNAME', '<noname>')
     date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-    eventType = 'Warning' if err else 'Normal'
+    event_type = 'Warning' if err else 'Normal'
     reason = 'Failed' if err else 'Created'
-    suffix = random.randint(10000, 10000000)
-    sourceComponent = 'volume-backup'
+    event_id = int(round(time.time() * 1000))
+    source_component = 'volume-backup'
 
     event = {
         'apiVersion': 'v1',
         'kind': 'Event',
         'metadata': {
-            'name': f'{sourceComponent}.{suffix}',
+            'name': f'{source_component}.{event_id}',
             'namespace': pvc_namespace
         },
-        'type': eventType,
+        'type': event_type,
         'count': 1,
         'message': err,
         'firstTimestamp': date,
@@ -74,7 +77,7 @@ def gen_event(corev1, err, snapshot, pv, pvc_name, pvc_namespace):
         'reportingComponent': 'backup.getup.io/volume',
         'reportingInstance': hostname,
         'source': {
-            'component': sourceComponent,
+            'component': source_component,
             'host': hostname
         }
     }
