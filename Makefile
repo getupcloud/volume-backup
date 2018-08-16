@@ -1,11 +1,15 @@
 REPO = getupcloud
-NAME = aws-volume-snapshot
-VERSION = v1
+NAME = volume-backup
+VERSION = v0.1
 
 all: build
 
-build:
-	docker build -t ${REPO}/${NAME}:${VERSION} .
+build: lint
+	docker build -t ${REPO}/${NAME}:${VERSION} . --no-cache
+
+.PHONY: lint
+lint:
+	pylint -E *.py providers/
 
 tag-latest:
 	docker tag ${REPO}/${NAME}:${VERSION} ${REPO}/${NAME}:latest

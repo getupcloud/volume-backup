@@ -4,6 +4,7 @@ import traceback
 from datetime import datetime
 from .provider import Provider
 
+
 class AWS(Provider):
 
     def __init__(self):
@@ -17,46 +18,36 @@ class AWS(Provider):
         iam_user = self.iam.get_user()
         return iam_user['User']
 
-    def get_tag_value(self, tags, key):
-        for tag in tags:
-            if tag['Key'] == key:
-                return tag['Value']
-
-    def list_volumes(self):
-        print(f'--> Listing volumes from region {self.region}')
-
-        filters = [
-            {'Name':'tag:Name','Values':['kubernetes-dynamic-pvc-*']},
-            {'Name':'status','Values':['available', 'in-use']},
-        ]
-        volumes = self.ec2.describe_volumes(Filters=filters)['Volumes']
-
-        print(f'--> Found {len(volumes)} volume(s)')
-
-        return volumes
-
-    def create_snapshot(self, volume, dry_run=False):
-        ignore = self.get_tag_value(volume['Tags'], 'snapshot')
-        if ignore in [ 'false', 'False', 'no', '0' ]:
-            print(f'--> Ignoring snapshot for volume {volume["VolumeId"]}')
-            return
-
-        pv = self.get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pv/name')
-        pvc = self.get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pvc/name')
-        namespace = self.get_tag_value(volume['Tags'], 'kubernetes.io/created-for/pvc/namespace')
+    def create_snapshot(self, pv, dry_run=False):
+        pvc_name = pv.spec.claimRef.name
+        pvc_namespace = pv.spec.claimRef.namespace
         ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-        description = f'backup-{ts}-{namespace}-{pvc}-{pv}'
+        description = f'backup-{ts}-{pvc_namespace}-{pvc_name}-{pv.metadata.name}'
+        aws_volume_id = pv.spec.awsElasticBlockStore.volumeID.split('/')[-1]
 
-        print(f'--> Creating snapshot for volume {volume["VolumeId"]} -> ', end='', flush=True)
+        print(f'--> Creating snapshot for EBS {aws_volume_id} -> ', end='', flush=True)
 
         if dry_run:
             print('(not created by user request)')
-            return {}
+            return
 
-        snapshot = self.ec2.create_snapshot(VolumeId=volume['VolumeId'], Description=description)
-        print(f'{snapshot["SnapshotId"]} [{snapshot["VolumeSize"]}Gi] {snapshot["Description"]}')
-        self.ec2.create_tags(Resources=[snapshot["SnapshotId"]], Tags=[{'Key':'CreatedBy', 'Value':'AutomatedBackup'}])
-        return snapshot
+        ret = {
+            'err': None,
+            'snapshot': None,
+            'pv': pv,
+            'pvc_name': pvc_name,
+            'pvc_namespace': pvc_namespace
+        }
+        try:
+            snapshot = self.ec2.create_snapshot(VolumeId=aws_volume_id, Description=description)
+            ret['snapshot'] = snapshot
+            print(f'{snapshot["SnapshotId"]} [{snapshot["VolumeSize"]}Gi] {snapshot["Description"]}')
+            self.ec2.create_tags(Resources=[snapshot["SnapshotId"]], Tags=[{'Key':'CreatedBy', 'Value':'AutomatedBackup'}])
+        except Exception as ex:
+            traceback.print_exc()
+            ret['err'] = str(ex)
+
+        return ret
 
     def list_snapshots(self):
         print(f'--> Listing snapshots from region {self.region}')
