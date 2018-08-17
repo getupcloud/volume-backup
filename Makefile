@@ -2,12 +2,12 @@ REPO = getupcloud
 NAME = volume-backup
 VERSION = v0.1
 
-default: image
+default: build
 
 ## Mandatory targets
 
 .PHONY: image
-image: lint
+build: lint
 	docker build -t ${REPO}/${NAME}:${VERSION} . --no-cache
 
 .PHONY: tag
