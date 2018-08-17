@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import traceback
-from apiclient.discovery import build
+from googleapiclient.discovery import build
 from datetime import datetime
 from dateutil.parser import parse
 from .provider import Provider
@@ -13,57 +13,51 @@ class GCE(Provider):
         self.project_id = project_id
         self.zone = zone
         service = build('compute', 'v1')
-        self.disks = service.disks()
-        self.snapshots = service.snapshots()
+        self.disks = service.disks() # pylint: disable=E1101
+        self.snapshots = service.snapshots() # pylint: disable=E1101
 
-    def get_tag_value(self, tags, key):
-        return tags.get(key)
-
-    def list_volumes(self):
-        print(f'--> Listing volumes from project {self.project_id}, zone {self.zone}')
-
-        volumes = [
-            disk for disk in self.disks.list(project=self.project_id, zone=self.zone).execute()['items']
-            if disk['name'].startswith('kubernetes-dynamic-pvc-')
-        ]
-
-        print(f'--> Found {len(volumes)} volume(s)')
-
-        return volumes
-
-    def create_snapshot(self, volume, dry_run=False):
-        tags = json.loads(volume['description'])
-
-        ignore = self.get_tag_value(tags, 'snapshot')
-        if ignore in [ 'false', 'False', 'no', '0' ]:
-            print(f'--> Ignoring snapshot for volume {volume["name"]}')
-            return
-
-        namespace = self.get_tag_value(tags, 'kubernetes.io/created-for/pvc/namespace')
-        pvc = self.get_tag_value(tags, 'kubernetes.io/created-for/pvc/name')
+    def create_snapshot(self, pv, dry_run=False):
+        pvc_name = pv.spec.claimRef.name
+        pvc_namespace = pv.spec.claimRef.namespace
         ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-        name = f'{namespace}-{pvc}-{ts}'
+        description = f'backup-{ts}-{pvc_namespace}-{pvc_name}-{pv.metadata.name}'
+        gce_pd_name = pv.spec.gcePersistentDisk.pdName
+        name = f'{pvc_namespace}-{pvc_name}-{ts}'
         labels = {
             'created-by': 'automated-backup',
             'name': name,
-            'pv': self.get_tag_value(tags, 'kubernetes.io/created-for/pv/name'),
-            'pvc': pvc,
-            'namespace': namespace
+            'pv': pv.metadata.name,
+            'pvc': pvc_name,
+            'namespace': pvc_namespace
 
         }
-        print(f'--> Creating snapshot for volume {volume["name"]} -> ', end='', flush=True)
+        print(f'--> Creating snapshot for persistent disk {gce_pd_name} -> ', end='', flush=True)
 
         if dry_run:
             print('(not created by user request)')
-            return {}
+            return
 
-        snapshot = self.disks.createSnapshot(
-                    project=self.project_id,
-                    zone=self.zone,
-                    disk=volume['name'],
-                    body={'name': name, 'labels': labels}).execute()
-        print(f'{snapshot["name"]} [{volume["sizeGb"]}Gb] {labels}')
-        return snapshot
+        ret = {
+            'err': None,
+            'snapshot': None,
+            'pv': pv,
+            'pvc_name': pvc_name,
+            'pvc_namespace': pvc_namespace
+        }
+
+        try:
+            snapshot = self.disks.createSnapshot(
+                project=self.project_id,
+                zone=self.zone,
+                disk=gce_pd_name,
+                body={'name': name, 'labels': labels}).execute()
+            ret['snapshot'] = snapshot
+            print(f'{snapshot["name"]} [{pv.spec.capacity.storage}] {labels}')
+        except Exception as ex:
+            traceback.print_exc()
+            ret['err'] = str(ex)
+
+        return ret
 
     def list_snapshots(self):
         print(f'--> Listing snapshots from project {self.project_id}, zone {self.zone}')

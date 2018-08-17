@@ -1,18 +1,12 @@
 class Provider:
-    def get_tag_value(self, tags, key):
-        raise NotImplemented
-
-    def list_volumes(self):
-        raise NotImplemented
-
-    def create_snapshot(self, volume, dry_run=False):
-        raise NotImplemented
+    def create_snapshot(self, pv, dry_run=False):
+        raise NotImplementedError
 
     def list_snapshots(self):
-        raise NotImplemented
+        raise NotImplementedError
 
     def delete_snapshot(self, snapshot, dry_run=False):
-        raise NotImplemented
+        raise NotImplementedError
 
     def expired_snapshot(self, snapshot, clean_before):
-        raise NotImplemented
+        raise NotImplementedError
