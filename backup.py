@@ -47,8 +47,7 @@ else:
 print('--> Started', datetime.utcnow())
 
 
-
-def gen_event(corev1, err, snapshot, pv, pvc_name, pvc_namespace):
+def gen_event(corev1, err="", pvc_name="", pvc_namespace="", **kwargs):
     hostname = os.environ.get('HOSTNAME', '<noname>')
     date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
     event_type = 'Warning' if err else 'Normal'
@@ -121,18 +120,21 @@ def list_persistent_volumes(corev1):
     print(f'--> Found {len(pvs)} persistent volume(s)')
     return pvs
 
-if args.create_snapshots:
-    for pv in list_persistent_volumes(corev1):
-        ret = provider.create_snapshot(pv, dry_run=args.dry_run)
-        if ret:
-            gen_event(corev1, **ret)
+try:
+    if args.create_snapshots:
+        for pv in list_persistent_volumes(corev1):
+            ret = provider.create_snapshot(pv, dry_run=args.dry_run)
+            if ret:
+                gen_event(corev1, **ret)
 
-if args.clean_old_snapshots:
-    clean_before = datetime.utcnow() - relativedelta(days=args.retention_days)
-    clean_before = clean_before.replace(tzinfo=timezone.utc)
+    if args.clean_old_snapshots:
+        clean_before = datetime.utcnow() - relativedelta(days=args.retention_days)
+        clean_before = clean_before.replace(tzinfo=timezone.utc)
 
-    print(f'--> Cleaning snapshots older than {args.retention_days} days, before {clean_before}')
+        print(f'--> Cleaning snapshots older than {args.retention_days} days, before {clean_before}')
 
-    for snapshot in provider.list_snapshots():
-        if provider.expired_snapshot(snapshot, clean_before):
-            provider.delete_snapshot(snapshot, dry_run=args.dry_run)
+        for snapshot in provider.list_snapshots():
+            if provider.expired_snapshot(snapshot, clean_before):
+                provider.delete_snapshot(snapshot, dry_run=args.dry_run)
+except Exception as ex:
+    gen_event(corev1, err=str(ex), snapshot=None, pv=None, pvc_name=None, pvc_namespace=None)

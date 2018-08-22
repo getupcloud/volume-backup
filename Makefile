@@ -1,6 +1,6 @@
 REPO = getupcloud
 NAME = volume-backup
-VERSION = v0.1
+VERSION = v0.2
 
 default: build
 
