@@ -6,7 +6,7 @@ default: build
 
 ## Mandatory targets
 
-.PHONY: image
+.PHONY: build
 build: lint
 	docker build -t ${REPO}/${NAME}:${VERSION} . --no-cache
 
@@ -19,7 +19,7 @@ push:
 	docker push ${REPO}/${NAME}:${VERSION}
 
 .PHONY: push-latest
-push-latest: tag-latest
+push-latest: tag
 	docker push ${REPO}/${NAME}:latest
 
 ## Project specific targets

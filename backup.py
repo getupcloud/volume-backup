@@ -46,21 +46,32 @@ else:
 
 print('--> Started', datetime.utcnow())
 
+if 'KUBERNETES_SERVICE_HOST' in os.environ:
+    config.load_incluster_config()
+else:
+    config.load_kube_config()
 
-def gen_event(corev1, err="", pvc_name="", pvc_namespace="", **kwargs):
+corev1 = client.CoreV1Api()
+
+
+def gen_event(corev1, pv, err=""):
+    claim_ref = get_claim_ref(pv)
     hostname = os.environ.get('HOSTNAME', '<noname>')
     date = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
     event_type = 'Warning' if err else 'Normal'
     reason = 'Failed' if err else 'Created'
     event_id = int(round(time.time() * 1000))
     source_component = 'volume-backup'
+    event_namespace = getattr(claim_ref, 'namespace', os.environ.get('NAMESPACE', 'default'))
+
+    print(f'Generating event: err={err} pv={pv.metadata.name if pv else "<unknown>"} namespace={event_namespace} pvc={claim_ref.name if claim_ref else ""}')
 
     event = {
         'apiVersion': 'v1',
         'kind': 'Event',
         'metadata': {
             'name': f'{source_component}.{event_id}',
-            'namespace': pvc_namespace
+            'namespace': event_namespace
         },
         'type': event_type,
         'count': 1,
@@ -69,32 +80,27 @@ def gen_event(corev1, err="", pvc_name="", pvc_namespace="", **kwargs):
         'lastTimestamp': date,
         'reason': reason,
         'involvedObject': {
-            'kind': 'PersistentVolumeClaim',
-            'namespace': pvc_namespace,
-            'name': pvc_name
+            'kind': 'PersistentVolumeBackup',
+            'namespace': event_namespace,
+            'name': pv.metadata.name if pv else '<unknown>',
         },
-        'reportingComponent': 'backup.getup.io/volume',
+        'reportingComponent': 'backup.getup.io/database',
         'reportingInstance': hostname,
         'source': {
             'component': source_component,
-            'host': hostname
+            'host': source_component ## TODO: discover node hostname
         }
     }
 
-    return corev1.create_namespaced_event(body=event, namespace=pvc_namespace)
+    return corev1.create_namespaced_event(body=event, namespace=event_namespace)
 
-if 'KUBERNETES_SERVICE_HOST' in os.environ:
-    config.load_incluster_config()
-else:
-    config.load_kube_config()
-
-corev1 = client.CoreV1Api()
 
 def pv_is_bound(pv):
     try:
         return pv.status.phase == 'Bound'
     except:
         pass
+
 
 def pv_provisioner(pv):
     try:
@@ -103,29 +109,42 @@ def pv_provisioner(pv):
     except:
         pass
 
+
 def exclude_pv(pv):
     try:
         return pv.metadata.annotations.get('backup.getup.io/ignore-snapshot', False)
     except:
         pass
 
+
 def pv_is_valid(pv):
     return ((exclude_pv(pv) is False)
             and pv_is_bound(pv)
             and (pv_provisioner(pv) in ('kubernetes.io/aws-ebs', 'kubernetes.io/gce-pd')))
 
-def list_persistent_volumes(corev1):
+
+def list_pvs(corev1):
     print(f'--> Listing persistent volumes')
-    pvs = list(filter(pv_is_valid, corev1.list_persistent_volume_claim_for_all_namespaces().items))
+    pvs = list(filter(pv_is_valid, corev1.list_persistent_volume().items))
     print(f'--> Found {len(pvs)} persistent volume(s)')
     return pvs
 
+
+def get_claim_ref(pv):
+    if pv_is_bound(pv) and hasattr(pv.spec, 'claim_ref'):
+        return pv.spec.claim_ref
+
+
 try:
     if args.create_snapshots:
-        for pv in list_persistent_volumes(corev1):
-            ret = provider.create_snapshot(pv, dry_run=args.dry_run)
-            if ret:
-                gen_event(corev1, **ret)
+        for pv in list_pvs(corev1):
+            try:
+                ret = provider.create_snapshot(pv, dry_run=args.dry_run)
+
+                if ret:
+                    gen_event(corev1, ret['pv'])
+            except Exception as ex:
+                gen_event(corev1, pv=None, err=str(ex))
 
     if args.clean_old_snapshots:
         clean_before = datetime.utcnow() - relativedelta(days=args.retention_days)
@@ -137,4 +156,4 @@ try:
             if provider.expired_snapshot(snapshot, clean_before):
                 provider.delete_snapshot(snapshot, dry_run=args.dry_run)
 except Exception as ex:
-    gen_event(corev1, err=str(ex), snapshot=None, pv=None, pvc_name=None, pvc_namespace=None)
+    gen_event(corev1, pv=None, err=str(ex))
