@@ -17,21 +17,19 @@ class GCE(Provider):
         self.snapshots = service.snapshots() # pylint: disable=E1101
 
     def create_snapshot(self, pv, dry_run=False):
-        pvc_name = pv.spec.claimRef.name
-        pvc_namespace = pv.spec.claimRef.namespace
+        print(f'--> Creating snapshot for PV {pv.metadata.name}', end='', flush=True)
+
         ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-        description = f'backup-{ts}-{pvc_namespace}-{pvc_name}-{pv.metadata.name}'
-        gce_pd_name = pv.spec.gcePersistentDisk.pdName
-        name = f'{pvc_namespace}-{pvc_name}-{ts}'
+        name = f'{pv.metadata.name}-{ts}'
+        gce_pd_name = pv.spec.gce_persistent_disk.pd_name
+
+        print(f' PD {gce_pd_name} -> ', end='', flush=True)
+
         labels = {
             'created-by': 'automated-backup',
             'name': name,
             'pv': pv.metadata.name,
-            'pvc': pvc_name,
-            'namespace': pvc_namespace
-
         }
-        print(f'--> Creating snapshot for persistent disk {gce_pd_name} -> ', end='', flush=True)
 
         if dry_run:
             print('(not created by user request)')
@@ -41,8 +39,6 @@ class GCE(Provider):
             'err': None,
             'snapshot': None,
             'pv': pv,
-            'pvc_name': pvc_name,
-            'pvc_namespace': pvc_namespace
         }
 
         try:

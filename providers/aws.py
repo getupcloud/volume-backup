@@ -19,13 +19,13 @@ class AWS(Provider):
         return iam_user['User']
 
     def create_snapshot(self, pv, dry_run=False):
-        pvc_name = pv.spec.claimRef.name
-        pvc_namespace = pv.spec.claimRef.namespace
-        ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
-        description = f'backup-{ts}-{pvc_namespace}-{pvc_name}-{pv.metadata.name}'
-        aws_volume_id = pv.spec.awsElasticBlockStore.volumeID.split('/')[-1]
+        print(f'--> Creating snapshot for PV {pv.metadata.name}', end='', flush=True)
 
-        print(f'--> Creating snapshot for EBS {aws_volume_id} -> ', end='', flush=True)
+        ts = datetime.utcnow().strftime('%Y%m%d-%H%M%S')
+        description = f'{pv.metadata.name}-{ts}'
+        aws_volume_id = pv.spec.aws_elastic_block_store.volume_id.split('/')[-1]
+
+        print(f' EBS {aws_volume_id} -> ', end='', flush=True)
 
         if dry_run:
             print('(not created by user request)')
@@ -35,8 +35,6 @@ class AWS(Provider):
             'err': None,
             'snapshot': None,
             'pv': pv,
-            'pvc_name': pvc_name,
-            'pvc_namespace': pvc_namespace
         }
         try:
             snapshot = self.ec2.create_snapshot(VolumeId=aws_volume_id, Description=description)
